@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>基于光学字符识别和本地大语言模型的文档转换平台</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/fontawesome/all.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container-fluid">
+        <!-- 顶部导航栏 -->
+        <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
+            <div class="container">
+                <a class="navbar-brand" href="#">
+                    <i class="fas fa-file-pdf"></i> 基于光学字符识别和本地大语言模型的文档转换平台
+                </a>
+                <div class="navbar-text ms-auto">
+                    <span class="badge bg-success" id="system-status">
+                        <i class="fas fa-check-circle"></i> 系统正常
+                    </span>
+                </div>
+            </div>
+        </nav>
+
+        <div class="container">
+            <!-- 系统信息卡片 -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card info-card">
+                        <div class="card-body">
+                            <h6 class="card-subtitle mb-2 text-muted">处理设备</h6>
+                            <h4 class="card-title" id="device-info">
+                                <i class="fas fa-microchip"></i> 
+                                <span id="device-type">{% if use_gpu %}GPU{% else %}CPU{% endif %}</span>
+                            </h4>
+                            <div class="form-check form-switch">
+                                <input type="checkbox" class="form-check-input" id="gpu-toggle" {% if use_gpu %}checked{% endif %}>
+                                <label class="form-check-label" for="gpu-toggle">启用GPU加速</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card info-card">
+                        <div class="card-body">
+                            <h6 class="card-subtitle mb-2 text-muted">运行模式</h6>
+                            <h4 class="card-title">
+                                <i class="fas fa-cog"></i> <span id="run-mode">兼容模式</span>
+                            </h4>
+                            <button class="btn btn-sm btn-outline-primary" id="change-mode-btn">
+                                更改模式
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card info-card">
+                        <div class="card-body">
+                            <h6 class="card-subtitle mb-2 text-muted">处理队列</h6>
+                            <h4 class="card-title">
+                                <i class="fas fa-tasks"></i> 
+                                <span id="queue-count">0</span> / <span id="batch-size">5</span>
+                            </h4>
+                            <small class="text-muted">活跃/批处理大小</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card info-card">
+                        <div class="card-body">
+                            <h6 class="card-subtitle mb-2 text-muted">系统资源</h6>
+                            <h4 class="card-title">
+                                <i class="fas fa-server"></i> 
+                                <span id="resource-usage">正常</span>
+                            </h4>
+                            <button class="btn btn-sm btn-outline-info" id="show-system-info">
+                                详细信息
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 主要功能区 -->
+            <div class="row">
+                <!-- 左侧：上传区域 -->
+                <div class="col-lg-8">
+                    <div class="card mb-4">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0"><i class="fas fa-upload"></i> 文件上传</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="drop-area" class="drop-area">
+                                <form class="upload-form">
+                                    <input type="file" id="fileInput" multiple accept=".pdf" hidden>
+                                    <div class="upload-icon">
+                                        <i class="fas fa-cloud-upload-alt fa-4x text-primary"></i>
+                                    </div>
+                                    <h4>拖放PDF文件到此处</h4>
+                                    <p class="text-muted">或者</p>
+                                    <label for="fileInput" class="btn btn-primary btn-lg">
+                                        <i class="fas fa-folder-open"></i> 选择文件
+                                    </label>
+                                    <p class="text-muted mt-3">
+                                        <small>支持批量上传 • 支持中文文件名 • 最大文件大小: 100MB</small>
+                                    </p>
+                                </form>
+                            </div>
+                            
+                            <!-- 文件列表 -->
+                            <div id="file-list" class="file-list mt-3" style="display: none;">
+                                <h6>待上传文件：</h6>
+                                <ul class="list-group" id="pending-files">
+                                </ul>
+                                <div class="mt-3">
+                                    <button type="button" id="uploadButton" class="btn btn-success btn-lg">
+                                        <i class="fas fa-rocket"></i> 开始处理
+                                    </button>
+                                    <button type="button" id="clearFiles" class="btn btn-secondary">
+                                        <i class="fas fa-times"></i> 清空列表
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 处理队列 -->
+                    <div class="card">
+                        <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0"><i class="fas fa-list"></i> 处理队列</h5>
+                            <button id="clear-jobs" class="btn btn-sm btn-danger" title="清空所有任务">
+                                <i class="fas fa-trash"></i> 清空队列
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-hover" id="jobsTable">
+                                    <thead>
+                                        <tr>
+                                            <th>文件名</th>
+                                            <th>状态</th>
+                                            <th>进度</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="jobsTableBody">
+                                        <tr>
+                                            <td colspan="4" class="text-center text-muted">
+                                                暂无处理任务
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右侧：配置面板 -->
+                <div class="col-lg-4">
+                    <!-- OCR配置 -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-secondary text-white">
+                            <h5 class="mb-0"><i class="fas fa-sliders-h"></i> OCR配置</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label for="ocr-engine">OCR引擎</label>
+                                <select class="form-control" id="ocr-engine">
+                                    {% for key, engine in ocr_engines.items() %}
+                                    <option value="{{ key }}" 
+                                            {% if current_config.ocr_engine == key %}selected{% endif %}
+                                            {% if available_ocr_engines.get(key, {}).get('available', False) == False %}disabled{% endif %}>
+                                        {{ engine.name }}
+                                        {% if available_ocr_engines.get(key, {}).get('available', False) == False %}(不可用){% endif %}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                <small class="form-text text-muted" id="ocr-engine-description">
+                                    {{ ocr_engines[current_config.ocr_engine].description }}
+                                </small>
+                                <div class="mt-2">
+                                    <button class="btn btn-sm btn-outline-info" id="benchmark-ocr">
+                                        <i class="fas fa-chart-bar"></i> 性能对比
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary" id="refresh-engines">
+                                        <i class="fas fa-sync"></i> 刷新引擎
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="ocr-language">识别语言</label>
+                                <select class="form-control" id="ocr-language">
+                                    {% for key, lang in ocr_languages.items() %}
+                                    <option value="{{ key }}" {% if current_config.ocr_language == key %}selected{% endif %}>
+                                        {{ lang.name }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                <small class="form-text text-muted" id="ocr-language-description">
+                                    {{ ocr_languages[current_config.ocr_language].description }}
+                                </small>
+                            </div>
+
+                            <!-- 智能分离识别语言选择 -->
+                            <div class="form-group" id="smart-separate-languages" style="display: none;">
+                                <label>选择文档包含的语言</label>
+                                <div class="card">
+                                    <div class="card-body">
+                                        <small class="text-muted mb-2 d-block">
+                                            <i class="fas fa-lightbulb"></i> 
+                                            系统将分别用每种语言进行OCR识别，然后智能整合结果以获得最高质量
+                                        </small>
+                                        <div class="row">
+                                            {% for key, lang in available_languages.items() %}
+                                            <div class="col-md-4 col-sm-6">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" 
+                                                           name="selected_languages" value="{{ lang.code }}" 
+                                                           id="lang-{{ key }}">
+                                                    <label class="form-check-label" for="lang-{{ key }}">
+                                                        {{ lang.name }}
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                        <div class="mt-2">
+                                            <button type="button" class="btn btn-sm btn-outline-primary" id="select-common-langs">
+                                                <i class="fas fa-check-square"></i> 选择常用语言
+                                            </button>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary" id="clear-lang-selection">
+                                                <i class="fas fa-times"></i> 清除选择
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 自定义语言组合输入 -->
+                            <div class="form-group" id="custom-languages-input" style="display: none;">
+                                <label for="custom-languages">自定义语言组合</label>
+                                <input type="text" class="form-control" id="custom-languages" 
+                                       placeholder="例如: 中文+英文+日文">
+                                <small class="form-text text-muted">
+                                    使用+号分隔多个语言，如：中文+英文+法文
+                                </small>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="ocr-level">OCR级别</label>
+                                <select class="form-control" id="ocr-level">
+                                    {% for key, level in ocr_levels.items() %}
+                                    <option value="{{ key }}" {% if current_config.ocr_level == key %}selected{% endif %}>
+                                        {{ level.name }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                <small class="form-text text-muted" id="ocr-level-description">
+                                    {{ ocr_levels[current_config.ocr_level].description }}
+                                </small>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="table-format">表格提取</label>
+                                <select class="form-control" id="table-format">
+                                    {% for key, format in table_formats.items() %}
+                                    <option value="{{ key }}" {% if current_config.extract_table_format == key %}selected{% endif %}>
+                                        {{ format.name }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                <small class="form-text text-muted" id="table-format-description">
+                                    {{ table_formats[current_config.extract_table_format].description }}
+                                </small>
+                            </div>
+
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input" id="extract-formula" 
+                                           {% if current_config.extract_formula %}checked{% endif %}>
+                                    <label class="form-check-label" for="extract-formula">
+                                        提取数学公式
+                                    </label>
+                                </div>
+                                <small class="form-text text-muted">
+                                    启用数学公式提取（可能增加处理时间）
+                                </small>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="ollama-model">AI模型（可选）</label>
+                                <select class="form-control" id="ollama-model" {% if not ollama_available %}disabled{% endif %}>
+                                    {% for key, model in ollama_models.items() %}
+                                    <option value="{{ key }}" {% if current_config.ollama_model == key %}selected{% endif %}>
+                                        {{ model.name }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                {% if ollama_available %}
+                                <small class="form-text text-muted" id="ollama-model-description">
+                                    {{ ollama_models[current_config.ollama_model].description }}
+                                </small>
+                                {% else %}
+                                <small class="form-text text-warning">
+                                    <i class="fas fa-exclamation-triangle"></i> Ollama服务未检测到
+                                </small>
+                                {% endif %}
+                            </div>
+
+                            <div class="btn-group btn-block" role="group">
+                                <button id="save-config" class="btn btn-primary">
+                                    <i class="fas fa-save"></i> 保存配置
+                                </button>
+                                <button id="reset-config" class="btn btn-secondary">
+                                    <i class="fas fa-undo"></i> 重置
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 性能设置 -->
+                    <div class="card">
+                        <div class="card-header bg-warning text-dark">
+                            <h5 class="mb-0"><i class="fas fa-tachometer-alt"></i> 性能设置</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label for="batch-size-input">批处理大小</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" id="batch-size-input" 
+                                           min="1" max="10" value="5">
+                                    <div class="input-group-append">
+                                        <button class="btn btn-outline-secondary" id="update-batch-size">
+                                            更新
+                                        </button>
+                                    </div>
+                                </div>
+                                <small class="form-text text-muted">
+                                    同时处理的文件数量（1-10）
+                                </small>
+                            </div>
+
+                            <div class="form-check mb-2">
+                                <input type="checkbox" class="form-check-input" id="use-custom-config">
+                                <label class="form-check-label" for="use-custom-config">
+                                    为每个文件使用独立配置
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 系统信息模态框 -->
+    <div class="modal fade" id="systemInfoModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-info-circle"></i> 系统详细信息</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="systemInfoContent">
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="sr-only">加载中...</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 简单的系统信息弹出层 -->
+    <div id="systemInfoPopup" class="system-info-popup" style="display: none;">
+        <div class="popup-content">
+            <div class="popup-header">
+                <h5><i class="fas fa-info-circle"></i> 系统详细信息</h5>
+                <button type="button" class="popup-close" id="closeSystemInfo">&times;</button>
+            </div>
+            <div class="popup-body" id="systemInfoPopupContent">
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="sr-only">加载中...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="popup-footer">
+                <button type="button" class="btn btn-secondary" id="closeSystemInfoBtn">关闭</button>
+            </div>
+        </div>
+        <div class="popup-backdrop"></div>
+    </div>
+
+    <!-- 运行模式选择弹出层 -->
+    <div id="runModePopup" class="system-info-popup" style="display: none;">
+        <div class="popup-content" style="width: 500px;">
+            <div class="popup-header">
+                <h5><i class="fas fa-cog"></i> 选择运行模式</h5>
+                <button type="button" class="popup-close" id="closeRunMode">&times;</button>
+            </div>
+            <div class="popup-body">
+                <div class="list-group">
+                    <button type="button" class="list-group-item list-group-item-action mode-option" data-mode="compatible">
+                        <h6 class="mb-1">兼容模式</h6>
+                        <p class="mb-1">最高稳定性，适合所有环境</p>
+                        <small class="text-muted">推荐用于生产环境</small>
+                    </button>
+                    <button type="button" class="list-group-item list-group-item-action mode-option" data-mode="balanced">
+                        <h6 class="mb-1">平衡模式</h6>
+                        <p class="mb-1">平衡性能和稳定性</p>
+                        <small class="text-muted">适合大多数用户</small>
+                    </button>
+                    <button type="button" class="list-group-item list-group-item-action mode-option" data-mode="performance">
+                        <h6 class="mb-1">性能模式</h6>
+                        <p class="mb-1">最大化处理速度</p>
+                        <small class="text-muted">需要高性能硬件</small>
+                    </button>
+                </div>
+            </div>
+            <div class="popup-footer">
+                <button type="button" class="btn btn-secondary" id="cancelRunMode">取消</button>
+                <button type="button" class="btn btn-primary" id="apply-mode">应用</button>
+            </div>
+        </div>
+        <div class="popup-backdrop"></div>
+    </div>
+
+    <!-- OCR引擎性能对比弹出层 -->
+    <div id="ocrBenchmarkPopup" class="system-info-popup" style="display: none;">
+        <div class="popup-content" style="width: 800px;">
+            <div class="popup-header">
+                <h5><i class="fas fa-chart-bar"></i> OCR引擎性能对比</h5>
+                <button type="button" class="popup-close" id="closeBenchmark">&times;</button>
+            </div>
+            <div class="popup-body" id="benchmarkContent">
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="sr-only">测试中...</span>
+                    </div>
+                    <p class="mt-2">正在测试各OCR引擎性能，请稍候...</p>
+                </div>
+            </div>
+            <div class="popup-footer">
+                <button type="button" class="btn btn-secondary" id="closeBenchmarkBtn">关闭</button>
+                <button type="button" class="btn btn-primary" id="runBenchmark">重新测试</button>
+            </div>
+        </div>
+        <div class="popup-backdrop"></div>
+    </div>
+
+    <!-- 文件下载选择弹出层 -->
+    <div id="downloadPopup" class="system-info-popup" style="display: none;">
+        <div class="popup-content" style="width: 500px;">
+            <div class="popup-header">
+                <h5><i class="fas fa-download"></i> 选择下载文件</h5>
+                <button type="button" class="popup-close" id="closeDownload">&times;</button>
+            </div>
+            <div class="popup-body">
+                <div class="mb-3">
+                    <h6 id="downloadJobTitle">任务：</h6>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">选择要下载的文件类型：</label>
+                    <div class="download-options">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="download-markdown" value="markdown" checked>
+                            <label class="form-check-label" for="download-markdown">
+                                <i class="fab fa-markdown text-primary"></i> Markdown文件
+                                <small class="text-muted d-block">包含识别的文本内容</small>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="download-word" value="word">
+                            <label class="form-check-label" for="download-word">
+                                <i class="fas fa-file-word text-info"></i> Word文档
+                                <small class="text-muted d-block">可编辑的Word格式</small>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="download-pdf" value="pdf">
+                            <label class="form-check-label" for="download-pdf">
+                                <i class="fas fa-file-pdf text-danger"></i> 带文本PDF
+                                <small class="text-muted d-block">可搜索的PDF文件</small>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="download-zip" value="zip">
+                            <label class="form-check-label" for="download-zip">
+                                <i class="fas fa-file-archive text-warning"></i> 完整压缩包
+                                <small class="text-muted d-block">包含所有文件和图片</small>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group mt-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="download-all" checked>
+                        <label class="form-check-label" for="download-all">
+                            <strong>全选</strong>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="popup-footer">
+                <button type="button" class="btn btn-secondary" id="cancelDownload">取消</button>
+                <button type="button" class="btn btn-primary" id="confirmDownload">
+                    <i class="fas fa-download"></i> 开始下载
+                </button>
+            </div>
+        </div>
+        <div class="popup-backdrop"></div>
+    </div>
+
+    <!-- 重新处理任务弹出层 -->
+    <div id="reprocessPopup" class="system-info-popup" style="display: none;">
+        <div class="popup-content" style="width: 600px;">
+            <div class="popup-header">
+                <h5><i class="fas fa-redo"></i> 重新处理任务</h5>
+                <button type="button" class="popup-close" id="closeReprocess">&times;</button>
+            </div>
+            <div class="popup-body">
+                <div class="mb-3">
+                    <h6 id="reprocessJobTitle">任务：</h6>
+                </div>
+                
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i> 
+                    重新处理将使用新的配置重新识别PDF文档，原有结果将保留。
+                </div>
+
+                <!-- OCR引擎选择 -->
+                <div class="form-group mb-3">
+                    <label for="reprocess-ocr-engine" class="form-label">OCR引擎</label>
+                    <select class="form-select" id="reprocess-ocr-engine">
+                        <option value="pdf_craft">PDF-Craft (默认)</option>
+                        <option value="tesseract">Tesseract</option>
+                        <option value="easyocr">EasyOCR</option>
+                        <option value="paddleocr">PaddleOCR</option>
+                        <option value="rapidocr">RapidOCR</option>
+                    </select>
+                </div>
+
+                <!-- OCR级别选择 -->
+                <div class="form-group mb-3">
+                    <label for="reprocess-ocr-level" class="form-label">OCR级别</label>
+                    <select class="form-select" id="reprocess-ocr-level">
+                        <option value="fast">快速</option>
+                        <option value="standard" selected>标准 (默认)</option>
+                        <option value="accurate">精确</option>
+                        <option value="detailed">详细</option>
+                    </select>
+                </div>
+
+                <!-- 语言选择 -->
+                <div class="form-group mb-3">
+                    <label for="reprocess-ocr-language" class="form-label">识别语言</label>
+                    <select class="form-select" id="reprocess-ocr-language">
+                        <option value="auto" selected>自动检测</option>
+                        <option value="chinese">中文</option>
+                        <option value="english">英文</option>
+                        <option value="japanese">日文</option>
+                        <option value="korean">韩文</option>
+                        <option value="french">法文</option>
+                        <option value="german">德文</option>
+                        <option value="spanish">西班牙文</option>
+                        <option value="russian">俄文</option>
+                        <option value="arabic">阿拉伯文</option>
+                        <option value="multi_asian">亚洲多语言</option>
+                        <option value="multi_european">欧洲多语言</option>
+                        <option value="multi_all">全语言混合</option>
+                        <option value="smart_separate">智能分离识别</option>
+                        <option value="custom">自定义组合</option>
+                    </select>
+                </div>
+
+                <!-- 智能分离识别语言选择 -->
+                <div id="reprocess-smart-languages" class="form-group mb-3" style="display: none;">
+                    <label class="form-label">选择要分离识别的语言：</label>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="reprocess-lang-chinese" value="chinese">
+                                <label class="form-check-label" for="reprocess-lang-chinese">中文</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="reprocess-lang-english" value="english">
+                                <label class="form-check-label" for="reprocess-lang-english">英文</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="reprocess-lang-japanese" value="japanese">
+                                <label class="form-check-label" for="reprocess-lang-japanese">日文</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="reprocess-lang-korean" value="korean">
+                                <label class="form-check-label" for="reprocess-lang-korean">韩文</label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="reprocess-lang-french" value="french">
+                                <label class="form-check-label" for="reprocess-lang-french">法文</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="reprocess-lang-german" value="german">
+                                <label class="form-check-label" for="reprocess-lang-german">德文</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="reprocess-lang-spanish" value="spanish">
+                                <label class="form-check-label" for="reprocess-lang-spanish">西班牙文</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="reprocess-lang-russian" value="russian">
+                                <label class="form-check-label" for="reprocess-lang-russian">俄文</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 自定义语言组合 -->
+                <div id="reprocess-custom-languages" class="form-group mb-3" style="display: none;">
+                    <label for="reprocess-custom-languages-input" class="form-label">自定义语言组合</label>
+                    <input type="text" class="form-control" id="reprocess-custom-languages-input" 
+                           placeholder="例如: 中文+英文+日文">
+                    <small class="form-text text-muted">使用+号分隔多个语言，如：中文+英文+法文</small>
+                </div>
+
+                <!-- 表格提取格式 -->
+                <div class="form-group mb-3">
+                    <label for="reprocess-table-format" class="form-label">表格提取格式</label>
+                    <select class="form-select" id="reprocess-table-format">
+                        <option value="none">不提取</option>
+                        <option value="simple">简单</option>
+                        <option value="standard" selected>标准 (默认)</option>
+                        <option value="advanced">高级</option>
+                    </select>
+                </div>
+
+                <!-- 提取公式 -->
+                <div class="form-group mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="reprocess-extract-formula">
+                        <label class="form-check-label" for="reprocess-extract-formula">
+                            提取数学公式
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 重新处理原因 -->
+                <div class="form-group mb-3">
+                    <label for="reprocess-reason" class="form-label">重新处理原因（可选）</label>
+                    <input type="text" class="form-control" id="reprocess-reason" 
+                           placeholder="例如：更换OCR引擎、调整识别语言等">
+                </div>
+            </div>
+            <div class="popup-footer">
+                <button type="button" class="btn btn-secondary" id="cancelReprocess">取消</button>
+                <button type="button" class="btn btn-primary" id="confirmReprocess">
+                    <i class="fas fa-redo"></i> 开始重新处理
+                </button>
+            </div>
+        </div>
+        <div class="popup-backdrop"></div>
+    </div>
+
+    <!-- Bootstrap Bundle with Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- 其他脚本 -->
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

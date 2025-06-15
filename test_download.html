@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>下载功能测试</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        /* 下载弹出层样式 */
+        .system-info-popup {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .popup-backdrop {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1;
+        }
+
+        .popup-content {
+            position: relative;
+            background: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            max-width: 90%;
+            max-height: 90%;
+            width: 500px;
+            z-index: 2;
+            overflow: hidden;
+            animation: popupFadeIn 0.3s ease-out;
+        }
+
+        @keyframes popupFadeIn {
+            from {
+                opacity: 0;
+                transform: scale(0.9) translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+        .popup-header {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #f8f9fa;
+        }
+
+        .popup-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #6c757d;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .popup-body {
+            padding: 1.5rem;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+
+        .popup-footer {
+            padding: 1rem 1.5rem;
+            border-top: 1px solid #dee2e6;
+            background-color: #f8f9fa;
+            text-align: right;
+        }
+
+        .download-options .form-check {
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            border: 1px solid #e9ecef;
+            border-radius: 0.375rem;
+            transition: all 0.2s ease;
+        }
+
+        .download-options .form-check:hover {
+            background-color: #f8f9fa;
+            border-color: #007bff;
+        }
+
+        .download-options .form-check-input:checked + .form-check-label {
+            color: #007bff;
+        }
+
+        .download-options .form-check-label {
+            cursor: pointer;
+            width: 100%;
+            margin-bottom: 0;
+        }
+
+        .download-options .form-check-label i {
+            margin-right: 0.5rem;
+            font-size: 1.1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1>下载功能测试</h1>
+        <button class="btn btn-success" onclick="showDownloadPopup('test-job-123', '测试文档.pdf')">
+            <i class="fas fa-download"></i> 测试下载弹出层
+        </button>
+    </div>
+
+    <!-- 文件下载选择弹出层 -->
+    <div id="downloadPopup" class="system-info-popup" style="display: none;">
+        <div class="popup-content">
+            <div class="popup-header">
+                <h5><i class="fas fa-download"></i> 选择下载文件</h5>
+                <button type="button" class="popup-close" id="closeDownload">&times;</button>
+            </div>
+            <div class="popup-body">
+                <div class="mb-3">
+                    <h6 id="downloadJobTitle">任务：</h6>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">选择要下载的文件类型：</label>
+                    <div class="download-options">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="download-markdown" value="markdown" checked>
+                            <label class="form-check-label" for="download-markdown">
+                                <i class="fab fa-markdown text-primary"></i> Markdown文件
+                                <small class="text-muted d-block">包含识别的文本内容</small>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="download-word" value="word">
+                            <label class="form-check-label" for="download-word">
+                                <i class="fas fa-file-word text-info"></i> Word文档
+                                <small class="text-muted d-block">可编辑的Word格式</small>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="download-pdf" value="pdf">
+                            <label class="form-check-label" for="download-pdf">
+                                <i class="fas fa-file-pdf text-danger"></i> 带文本PDF
+                                <small class="text-muted d-block">可搜索的PDF文件</small>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="download-zip" value="zip">
+                            <label class="form-check-label" for="download-zip">
+                                <i class="fas fa-file-archive text-warning"></i> 完整压缩包
+                                <small class="text-muted d-block">包含所有文件和图片</small>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group mt-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="download-all">
+                        <label class="form-check-label" for="download-all">
+                            <strong>全选</strong>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="popup-footer">
+                <button type="button" class="btn btn-secondary" id="cancelDownload">取消</button>
+                <button type="button" class="btn btn-primary" id="confirmDownload">
+                    <i class="fas fa-download"></i> 开始下载
+                </button>
+            </div>
+        </div>
+        <div class="popup-backdrop"></div>
+    </div>
+
+    <script>
+        // 显示下载弹出层
+        function showDownloadPopup(jobId, jobTitle) {
+            const popup = document.getElementById('downloadPopup');
+            const titleElement = document.getElementById('downloadJobTitle');
+            
+            if (popup && titleElement) {
+                titleElement.textContent = `任务：${jobTitle}`;
+                popup.dataset.jobId = jobId;
+                popup.style.display = 'flex';
+                
+                // 重置选择状态
+                resetDownloadSelection();
+            }
+        }
+
+        // 关闭下载弹出层
+        function closeDownloadPopup() {
+            const popup = document.getElementById('downloadPopup');
+            if (popup) {
+                popup.style.display = 'none';
+            }
+        }
+
+        // 重置下载选择
+        function resetDownloadSelection() {
+            const checkboxes = document.querySelectorAll('#downloadPopup input[type="checkbox"]:not(#download-all)');
+            const selectAllCheckbox = document.getElementById('download-all');
+            
+            // 默认选中Markdown
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = checkbox.value === 'markdown';
+            });
+            
+            if (selectAllCheckbox) {
+                selectAllCheckbox.checked = false;
+            }
+        }
+
+        // 处理全选/取消全选
+        function handleSelectAll() {
+            const selectAllCheckbox = document.getElementById('download-all');
+            const checkboxes = document.querySelectorAll('#downloadPopup input[type="checkbox"]:not(#download-all)');
+            
+            if (selectAllCheckbox) {
+                checkboxes.forEach(checkbox => {
+                    checkbox.checked = selectAllCheckbox.checked;
+                });
+            }
+        }
+
+        // 处理单个选择变化
+        function handleSingleSelection() {
+            const selectAllCheckbox = document.getElementById('download-all');
+            const checkboxes = document.querySelectorAll('#downloadPopup input[type="checkbox"]:not(#download-all)');
+            
+            if (selectAllCheckbox) {
+                const allChecked = Array.from(checkboxes).every(checkbox => checkbox.checked);
+                const noneChecked = Array.from(checkboxes).every(checkbox => !checkbox.checked);
+                
+                selectAllCheckbox.checked = allChecked;
+                selectAllCheckbox.indeterminate = !allChecked && !noneChecked;
+            }
+        }
+
+        // 确认下载
+        function confirmDownload() {
+            const popup = document.getElementById('downloadPopup');
+            const jobId = popup.dataset.jobId;
+            const checkboxes = document.querySelectorAll('#downloadPopup input[type="checkbox"]:not(#download-all):checked');
+            
+            if (checkboxes.length === 0) {
+                alert('请至少选择一种文件类型');
+                return;
+            }
+            
+            const selectedTypes = Array.from(checkboxes).map(checkbox => checkbox.value);
+            
+            // 关闭弹出层
+            closeDownloadPopup();
+            
+            // 模拟下载
+            alert(`开始下载 ${selectedTypes.length} 个文件：${selectedTypes.join(', ')}`);
+        }
+
+        // 绑定事件
+        document.addEventListener('DOMContentLoaded', function() {
+            const closeDownloadBtn = document.getElementById('closeDownload');
+            const cancelDownloadBtn = document.getElementById('cancelDownload');
+            const confirmDownloadBtn = document.getElementById('confirmDownload');
+            const downloadAllCheckbox = document.getElementById('download-all');
+            const downloadBackdrop = document.querySelector('#downloadPopup .popup-backdrop');
+
+            if (closeDownloadBtn) {
+                closeDownloadBtn.addEventListener('click', closeDownloadPopup);
+            }
+            if (cancelDownloadBtn) {
+                cancelDownloadBtn.addEventListener('click', closeDownloadPopup);
+            }
+            if (confirmDownloadBtn) {
+                confirmDownloadBtn.addEventListener('click', confirmDownload);
+            }
+            if (downloadBackdrop) {
+                downloadBackdrop.addEventListener('click', closeDownloadPopup);
+            }
+
+            // 绑定全选复选框事件
+            if (downloadAllCheckbox) {
+                downloadAllCheckbox.addEventListener('change', handleSelectAll);
+            }
+
+            // 绑定单个文件类型复选框事件
+            const downloadCheckboxes = document.querySelectorAll('#downloadPopup input[type="checkbox"]:not(#download-all)');
+            downloadCheckboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', handleSingleSelection);
+            });
+        });
+    </script>
+</body>
+</html> 

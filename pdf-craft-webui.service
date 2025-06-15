@@ -1,0 +1,39 @@
+[Unit]
+Description=PDF-Craft WebUI - 智能文档转换平台
+Documentation=https://github.com/EasyCam/pdf-ocr-webui
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/pdf-craft-webui
+Environment=PATH=/home/ubuntu/pdf-craft-webui/venv/bin
+Environment=HOST=0.0.0.0
+Environment=PORT=5000
+Environment=DEBUG=False
+ExecStart=/home/ubuntu/pdf-craft-webui/venv/bin/python run.py
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pdf-craft-webui
+
+# 安全设置
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/home/ubuntu/pdf-craft-webui/uploads
+ReadWritePaths=/home/ubuntu/pdf-craft-webui/results
+ReadWritePaths=/home/ubuntu/pdf-craft-webui/models
+ReadWritePaths=/home/ubuntu/pdf-craft-webui/logs
+
+# 资源限制
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target 
