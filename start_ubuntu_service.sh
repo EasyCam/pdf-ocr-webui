@@ -96,6 +96,31 @@ install_dependencies() {
     print_message $GREEN "✅ 依赖安装完成"
 }
 
+# 安装OCR引擎
+install_ocr_engines() {
+    print_message $BLUE "检查并安装OCR引擎..."
+    
+    # 询问是否安装OCR引擎
+    read -p "是否安装OCR引擎 (Tesseract + EasyOCR)? (y/n): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        if [[ -f "${SCRIPT_DIR}/quick_fix_ocr.sh" ]]; then
+            print_message $BLUE "运行OCR引擎快速安装脚本..."
+            chmod +x "${SCRIPT_DIR}/quick_fix_ocr.sh"
+            bash "${SCRIPT_DIR}/quick_fix_ocr.sh"
+        else
+            print_message $BLUE "手动安装基本OCR引擎..."
+            # 安装Tesseract
+            sudo apt install -y tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-chi-tra tesseract-ocr-eng
+            # 安装Python OCR包
+            pip3 install --user pytesseract Pillow opencv-python numpy easyocr
+        fi
+        print_message $GREEN "✅ OCR引擎安装完成"
+    else
+        print_message $YELLOW "跳过OCR引擎安装"
+    fi
+}
+
 # 创建日志目录
 setup_logging() {
     print_message $BLUE "设置日志目录..."
@@ -293,9 +318,57 @@ EOF
     cat > "${SCRIPT_DIR}/service_stop.sh" <<EOF
 #!/bin/bash
 echo "停止 PDF OCR WebUI 服务..."
-sudo systemctl stop ${SERVICE_NAME}
-echo "服务已停止"
-systemctl status ${SERVICE_NAME}
+
+# 停止主服务
+echo "正在停止主服务..."
+if sudo systemctl stop ${SERVICE_NAME}; then
+    echo "✅ 主服务停止成功"
+else
+    echo "⚠️  主服务停止失败，尝试强制停止..."
+    sudo systemctl kill --signal=SIGKILL ${SERVICE_NAME} 2>/dev/null || true
+    sleep 2
+fi
+
+# 停止监控服务
+echo "正在停止监控服务..."
+if sudo systemctl stop ${APP_NAME}-monitor.service 2>/dev/null; then
+    echo "✅ 监控服务停止成功"
+else
+    echo "⚠️  监控服务停止失败或不存在"
+fi
+
+# 检查并终止残留进程
+echo "检查残留进程..."
+PIDS=\$(pgrep -f "run.py" 2>/dev/null || true)
+if [[ -n "\$PIDS" ]]; then
+    echo "发现残留进程，正在终止: \$PIDS"
+    kill -TERM \$PIDS 2>/dev/null || true
+    sleep 3
+    # 如果仍在运行则强制终止
+    PIDS=\$(pgrep -f "run.py" 2>/dev/null || true)
+    if [[ -n "\$PIDS" ]]; then
+        echo "强制终止残留进程: \$PIDS"
+        kill -KILL \$PIDS 2>/dev/null || true
+    fi
+fi
+
+# 检查端口占用
+PORT_PIDS=\$(lsof -ti :5000 2>/dev/null || true)
+if [[ -n "\$PORT_PIDS" ]]; then
+    echo "发现占用端口5000的进程，正在终止: \$PORT_PIDS"
+    kill -TERM \$PORT_PIDS 2>/dev/null || true
+    sleep 2
+    # 强制终止
+    PORT_PIDS=\$(lsof -ti :5000 2>/dev/null || true)
+    if [[ -n "\$PORT_PIDS" ]]; then
+        kill -KILL \$PORT_PIDS 2>/dev/null || true
+    fi
+fi
+
+echo ""
+echo "🎉 服务停止完成！"
+echo "最终状态:"
+systemctl status ${SERVICE_NAME} --no-pager || true
 EOF
     
     # 创建重启脚本
@@ -337,6 +410,17 @@ case \$choice in
     *) echo "无效选择" ;;
 esac
 EOF
+    
+    # 复制强力停止脚本和诊断脚本
+    if [[ -f "${SCRIPT_DIR}/force_stop_service.sh" ]]; then
+        chmod +x "${SCRIPT_DIR}/force_stop_service.sh"
+        print_message $BLUE "强力停止脚本已就绪"
+    fi
+    
+    if [[ -f "${SCRIPT_DIR}/diagnose_service.sh" ]]; then
+        chmod +x "${SCRIPT_DIR}/diagnose_service.sh"
+        print_message $BLUE "诊断脚本已就绪"
+    fi
     
     # 设置执行权限
     chmod +x "${SCRIPT_DIR}/service_start.sh"
@@ -384,8 +468,10 @@ show_usage() {
     echo "📋 管理命令:"
     echo "  启动服务:     ./service_start.sh"
     echo "  停止服务:     ./service_stop.sh"
+    echo "  强力停止:     ./force_stop_service.sh"
     echo "  重启服务:     ./service_restart.sh"
     echo "  查看状态:     ./service_status.sh"
+    echo "  诊断服务:     ./diagnose_service.sh"
     echo "  查看日志:     ./view_logs.sh"
     echo ""
     echo "🔧 系统命令:"
@@ -424,6 +510,7 @@ main() {
             check_root
             check_system_requirements
             install_dependencies
+            install_ocr_engines
             setup_logging
             create_systemd_service
             create_monitor_script
